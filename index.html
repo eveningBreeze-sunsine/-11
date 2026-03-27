@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>食光小助 - 校园食堂助手</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -33,7 +33,6 @@
             text-align: center;
             font-weight: bold;
             font-size: 1.5rem;
-            position: relative;
         }
         .header small {
             font-size: 0.7rem;
@@ -176,36 +175,27 @@
         <button class="quick-btn" onclick="sendQuick('我的偏好')">📋 我的偏好</button>
     </div>
 
-    <!-- 输入区：添加按钮 + 输入框 + 发送按钮 -->
+    <!-- 输入区 -->
     <div class="input-area">
         <button class="add-btn" id="add-image-btn">+</button>
         <input type="text" id="chat-input" placeholder="输入消息..." autocomplete="off">
         <button id="send-btn">发送</button>
     </div>
-    <!-- 隐藏的文件上传控件 -->
     <input type="file" id="image-file-input" accept="image/*" style="display:none;">
 </div>
 
 <script>
-    // ========== 配置区域（请替换为您的实际信息）==========
+    // ========== 扣子配置（请替换为您的实际信息）==========
     const CONFIG = {
-        // 扣子 Bot API
-        BOT_API_KEY: 'pat_0tjQiAkRYKQTaaNZxuYm5107fHvgWZbZFthfChbW4b2S9CwCuc41h8ZuifLqvZUy',                // 扣子 Bot API Key
-        BOT_ID: '7613641806085177396',                     // 扣子 Bot ID
-        BOT_API_URL:'https://api.coze.cn/open_api/v2/chat',
-
-        // 图片识别工作流
-        WORKFLOW_IMAGE_ID: '7620407464383987722',
+        BOT_API_KEY: 'pat_0tjQiAkRYKQTaaNZxuYm5107fHvgWZbZFthfChbW4b2S9CwCuc41h8ZuifLqvZUy',  // 替换为你的 Bot API Key
+        BOT_ID: '7613641806085177396',                     // 替换为你的 Bot ID
+        BOT_API_URL: 'https://api.coze.cn/open_api/v1/chat', // 正确端点
+        WORKFLOW_IMAGE_ID: '7620407464383987722',          // 替换为你的图片识别工作流 ID
         WORKFLOW_API_URL: 'https://api.coze.cn/v1/workflow/run',
-
-        // 知识库配置（火山引擎）
-        KNOWLEDGE_ACCOUNT_ID: '2108708995',
-        KNOWLEDGE_API_KEY: '6fd67fb0-fe35-4807-9cab-3c805d5fe9eb',
-        KNOWLEDGE_SERVICE_RESOURCE_ID: 'kb-service-536cd41d7d763490',
-        KNOWLEDGE_API_URL: 'https://api-knowledgebase.mlp.cn-beijing.volces.com/api/knowledge/service/chat',
     };
+    // ====================================================
 
-    // 用户偏好
+    // 用户偏好（本地存储）
     let userPref = {
         taste: localStorage.getItem('pref_taste') || '正常',
         healthGoal: localStorage.getItem('pref_healthGoal') || '保持健康',
@@ -228,9 +218,9 @@
     }
 
     function showPrefDialog() {
-        const taste = prompt("请输入口味偏好（辣/清淡/正常）：", userPref.taste);
-        const goal = prompt("请输入健康目标（减重/增肌/保持健康）：", userPref.healthGoal);
-        const allergies = prompt("请输入忌口（多个用逗号分隔）：", userPref.allergies);
+        const taste = prompt("口味（辣/清淡/正常）：", userPref.taste);
+        const goal = prompt("健康目标（减重/增肌/保持健康）：", userPref.healthGoal);
+        const allergies = prompt("忌口（逗号分隔）：", userPref.allergies);
         if (taste !== null && goal !== null && allergies !== null) {
             savePref(taste, goal, allergies);
             sendMessage(`我的偏好是口味=${taste}, 健康目标=${goal}, 忌口=${allergies}`);
@@ -249,14 +239,30 @@
         container.scrollTop = container.scrollHeight;
     }
 
-    // 扣子 Bot 对话
+    let loadingDiv = null;
+    function addLoadingMessage() {
+        const container = document.getElementById('chat-messages');
+        loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message bot-message';
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        bubble.innerText = '🤔 思考中...';
+        loadingDiv.appendChild(bubble);
+        container.appendChild(loadingDiv);
+        container.scrollTop = container.scrollHeight;
+        return loadingDiv;
+    }
+    function removeLoadingMessage(loadingDiv) {
+        if (loadingDiv && loadingDiv.parentNode) loadingDiv.parentNode.removeChild(loadingDiv);
+    }
+
+    // 扣子 Bot 对话（新版 API）
     async function sendToBot(userMessage) {
         const fullMessage = `当前用户偏好：口味=${userPref.taste}，健康目标=${userPref.healthGoal}，忌口=${userPref.allergies || '无'}。\n用户问题：${userMessage}`;
         const payload = {
             bot_id: CONFIG.BOT_ID,
             user_id: 'user_' + (localStorage.getItem('user_id') || 'default'),
-            additional_messages: [{"role": "user", "content": fullMessage}],
-            auto_save: true,
+            messages: [{"role": "user", "content": fullMessage}],
             stream: false
         };
         try {
@@ -269,9 +275,20 @@
                 body: JSON.stringify(payload)
             });
             const data = await response.json();
-            if (data.code !== 0) return `Bot调用失败：${data.msg}`;
-            const assistantMsg = data.messages.find(m => m.role === 'assistant');
-            return assistantMsg ? assistantMsg.content : '未收到回复';
+            console.log('Bot响应:', data);   // 调试输出
+            if (data.code !== 0) {
+                return `Bot调用失败：${data.msg || JSON.stringify(data)}`;
+            }
+            // 新版返回结构：data.choices[0].message.content
+            if (data.choices && data.choices[0] && data.choices[0].message) {
+                return data.choices[0].message.content;
+            }
+            // 兼容旧版（如果返回 messages 字段）
+            if (data.messages) {
+                const assistantMsg = data.messages.find(m => m.role === 'assistant');
+                return assistantMsg ? assistantMsg.content : '未收到回复';
+            }
+            return '未收到回复';
         } catch (error) {
             console.error(error);
             return '网络错误，请稍后重试';
@@ -291,7 +308,7 @@
         sendMessage(text);
     }
 
-    // 图片识别
+    // 图片识别（工作流 API）
     async function recognizeImage(imageData) {
         const payload = {
             workflow_id: CONFIG.WORKFLOW_IMAGE_ID,
@@ -307,8 +324,11 @@
                 body: JSON.stringify(payload)
             });
             const data = await response.json();
-            if (data.code === 0) return data.data.output;
-            else return `识别失败：${data.msg}`;
+            if (data.code === 0) {
+                return data.data.output;   // 根据工作流实际输出字段调整
+            } else {
+                return `识别失败：${data.msg}`;
+            }
         } catch (error) {
             console.error(error);
             return '网络错误，请稍后重试';
@@ -333,7 +353,6 @@
         addMessage(result, 'bot');
     }
 
-    // 弹出图片上传选择
     function showImageUploadOptions() {
         const choice = confirm("点击“确定”上传本地图片，点击“取消”输入图片URL");
         if (choice) {
@@ -342,24 +361,6 @@
             const url = prompt("请输入图片URL（可访问的图片地址）：");
             if (url) handleImageUrl(url);
         }
-    }
-
-    // 辅助：加载提示
-    let loadingDiv = null;
-    function addLoadingMessage() {
-        const container = document.getElementById('chat-messages');
-        loadingDiv = document.createElement('div');
-        loadingDiv.className = 'message bot-message';
-        const bubble = document.createElement('div');
-        bubble.className = 'bubble';
-        bubble.innerText = '🤔 正在思考...';
-        loadingDiv.appendChild(bubble);
-        container.appendChild(loadingDiv);
-        container.scrollTop = container.scrollHeight;
-        return loadingDiv;
-    }
-    function removeLoadingMessage(loadingDiv) {
-        if (loadingDiv && loadingDiv.parentNode) loadingDiv.parentNode.removeChild(loadingDiv);
     }
 
     // 事件绑定
@@ -384,8 +385,8 @@
         }
     });
 
-    // 初始化（不再加载食堂菜单）
-    addMessage('你好！我是食堂助手“食光小助”🍚。我可以：\n🔍 查询菜品的营养信息（例如“西红柿炒蛋”）\n🌶️ 根据你的口味推荐菜品（例如“推荐辣的菜”）\n📷 上传图片识别菜品（点击“+”按钮）\n试试下面的快捷提问吧～', 'bot');
+    // 欢迎消息
+    addMessage("你好！我是食堂助手“食光小助”🍚。我可以：\n🔍 查询菜品的营养信息（例如“西红柿炒蛋”）\n🌶️ 根据你的口味推荐菜品（例如“推荐辣的菜”）\n📷 上传图片识别菜品（点击“+”按钮）\n试试下面的快捷提问吧～", 'bot');
 </script>
 </body>
 </html>
